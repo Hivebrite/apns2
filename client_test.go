@@ -8,7 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -245,6 +245,25 @@ func TestHeaders(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestExpirationHeader(t *testing.T) {
+	n := mockNotification()
+	n.ApnsID = "84DB694F-464F-49BD-960A-D6DB028335C9"
+	n.CollapseID = "game1.start.identifier"
+	n.Topic = "com.testapp"
+	n.Priority = 10
+	n.Expiration = time.Unix(0, 0)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, n.ApnsID, r.Header.Get("apns-id"))
+		assert.Equal(t, n.CollapseID, r.Header.Get("apns-collapse-id"))
+		assert.Equal(t, "10", r.Header.Get("apns-priority"))
+		assert.Equal(t, n.Topic, r.Header.Get("apns-topic"))
+		assert.Equal(t, "", r.Header.Get("apns-expiration"))
+	}))
+	defer server.Close()
+	_, err := mockClient(server.URL).Push(n)
+	assert.NoError(t, err)
+}
+
 func TestPushTypeAlertHeader(t *testing.T) {
 	n := mockNotification()
 	n.PushType = apns.PushTypeAlert
@@ -322,6 +341,28 @@ func TestPushTypeMDMHeader(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPushTypeLiveActivityHeader(t *testing.T) {
+	n := mockNotification()
+	n.PushType = apns.PushTypeLiveActivity
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "liveactivity", r.Header.Get("apns-push-type"))
+	}))
+	defer server.Close()
+	_, err := mockClient(server.URL).Push(n)
+	assert.NoError(t, err)
+}
+
+func TestPushTypePushToTalkHeader(t *testing.T) {
+	n := mockNotification()
+	n.PushType = apns.PushTypePushToTalk
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "pushtotalk", r.Header.Get("apns-push-type"))
+	}))
+	defer server.Close()
+	_, err := mockClient(server.URL).Push(n)
+	assert.NoError(t, err)
+}
+
 func TestAuthorizationHeader(t *testing.T) {
 	n := mockNotification()
 	token := mockToken()
@@ -340,7 +381,7 @@ func TestAuthorizationHeader(t *testing.T) {
 func TestPayload(t *testing.T) {
 	n := mockNotification()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
 		assert.Equal(t, n.Payload, body)
 	}))
@@ -359,9 +400,11 @@ func TestBadPayload(t *testing.T) {
 func Test200SuccessResponse(t *testing.T) {
 	n := mockNotification()
 	var apnsID = "02ABC856-EF8D-4E49-8F15-7B8A61D978D6"
+	var apnsUniqueID = "A6739D99-D92A-424B-A91E-BF012365BD4E"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("apns-id", apnsID)
+		w.Header().Set("apns-unique-id", apnsUniqueID)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -369,6 +412,7 @@ func Test200SuccessResponse(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, apnsID, res.ApnsID)
+	assert.Equal(t, apnsUniqueID, res.ApnsUniqueID)
 	assert.Equal(t, true, res.Sent())
 }
 
